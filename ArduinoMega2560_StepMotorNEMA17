@@ -1,0 +1,96 @@
+// Sertakan library bawaan untuk Stepper Motor
+#include <Stepper.h>
+
+// --- KONFIGURASI PIN ---
+// Definisikan jumlah langkah per putaran untuk motor Anda (biasanya 200)
+const int stepsPerRevolution = 200;
+
+// Pin untuk kontrol motor yang terhubung ke L298N
+const int motorPin1 = 8;  // IN1
+const int motorPin2 = 9;  // IN2
+const int motorPin3 = 10; // IN3
+const int motorPin4 = 11; // IN4
+
+// Pin untuk komponen input
+const int potPin = A0;      // Pin analog untuk potensio (kecepatan)
+const int onOffPin = 2;     // Pin digital untuk tombol ON/OFF
+const int arahPin = 3;      // Pin digital untuk tombol Arah
+
+// Penyesuaian Kecepatan
+// Semakin tinggi nilainya, semakin cepat putaran motor, tapi kontrol bisa sedikit delay
+const int langkahPerLoop = 10;
+
+// --- VARIABEL GLOBAL ---
+// Buat objek stepper motor
+Stepper myStepper(stepsPerRevolution, motorPin1, motorPin2, motorPin3, motorPin4);
+
+bool motorNyala = false;     // Status motor (true = nyala, false = mati)
+bool putarKanan = true;      // Arah putaran motor (true = kanan, false = kiri)
+bool statusTombolArah = LOW; // Untuk mendeteksi penekanan tombol arah
+
+void setup() {
+  // Atur pin tombol sebagai INPUT_PULLUP.
+  // Ini mengaktifkan resistor internal, jadi kita tidak perlu resistor eksternal.
+  // Tombol akan bernilai LOW saat ditekan dan HIGH saat dilepas.
+  pinMode(onOffPin, INPUT_PULLUP);
+  pinMode(arahPin, INPUT_PULLUP);
+
+  // Mulai komunikasi serial untuk debugging (opsional)
+  Serial.begin(9600);
+}
+
+void loop() {
+  // 1. BACA SEMUA INPUT DARI PENGGUNA
+
+  // Baca status tombol ON/OFF. Bernilai LOW jika ditekan.
+  if (digitalRead(onOffPin) == LOW) {
+    // Tunggu sebentar untuk menghindari "bouncing" (pembacaan ganda)
+    delay(50); 
+    // Balikkan status motor (jika mati jadi nyala, jika nyala jadi mati)
+    motorNyala = !motorNyala; 
+    // Tunggu sampai tombol dilepas untuk menghindari pergantian berulang kali
+    while(digitalRead(onOffPin) == LOW); 
+  }
+
+  // Baca status tombol Arah. Bernilai LOW jika ditekan.
+  if (digitalRead(arahPin) == LOW) {
+    delay(50);
+    // Balikkan arah putaran
+    putarKanan = !putarKanan;
+    while(digitalRead(arahPin) == LOW);
+  }
+
+  // 2. PROSES LOGIKA & KONTROL MOTOR
+
+  if (motorNyala) {
+    // Jika motor dalam status ON
+    
+    // Baca nilai potensio (0-1023)
+    int nilaiPot = analogRead(potPin);
+    
+    // Konversi nilai potensio (0-1023) menjadi rentang kecepatan yang sesuai (misal: 5-100 RPM)
+    // RPM rendah (5) saat potensio di minimum, RPM tinggi (100) saat di maksimum.
+    int kecepatanMotor = map(nilaiPot, 0, 1023, 10, 100);
+    
+    // Atur kecepatan motor
+    myStepper.setSpeed(kecepatanMotor);
+    
+    // Tentukan arah dan gerakkan motor satu langkah
+    if (putarKanan) {
+      myStepper.step(langkahPerLoop); // Angka positif untuk putar kanan
+    } else {
+      myStepper.step(-langkahPerLoop); // Angka negatif untuk putar kiri
+    }
+
+    // (Opsional) Tampilkan status ke Serial Monitor untuk debugging
+    Serial.print("Motor: ON, Kecepatan: ");
+    Serial.print(kecepatanMotor);
+    Serial.print(" RPM, Arah: ");
+    Serial.println(putarKanan ? "Kanan" : "Kiri");
+
+  } else {
+    // Jika motor dalam status OFF, tidak melakukan apa-apa
+    // (Opsional) Tampilkan status ke Serial Monitor
+    Serial.println("Motor: OFF");
+  }
+}
