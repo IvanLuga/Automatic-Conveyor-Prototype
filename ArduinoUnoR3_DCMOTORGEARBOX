@@ -1,0 +1,88 @@
+/*
+ * Kode Program Mini Conveyor Portabel (Kontrol Kecepatan)
+ * Fitur:
+ * 1. Kecepatan motor diatur 75% (berkurang 25%)
+ * 2. Tombol ON/OFF dan Tombol Arah
+ */
+
+// --- Definisi Pin ---
+const int pinMotorIN1 = 8;
+const int pinMotorIN2 = 9;
+const int pinMotorSpeed = 5;  // Pin ENA untuk kecepatan (PWM)
+
+const int pinTombolOnOff = 2; 
+const int pinTombolArah = 3;  
+
+// --- Variabel Global ---
+bool motorNyala = false;
+bool arahMaju = true; 
+
+// Atur Kecepatan (0 = berhenti, 255 = 100%)
+// 100% - 25% = 75% -> 255 * 0.75 = 191.25
+const int kecepatanMotor = 191; // Kecepatan 75%
+
+void setup() {
+  Serial.begin(9600);
+  Serial.println("Sistem Conveyor: Kontrol Kecepatan Aktif");
+
+  // Atur semua pin motor sebagai OUTPUT
+  pinMode(pinMotorIN1, OUTPUT);
+  pinMode(pinMotorIN2, OUTPUT);
+  pinMode(pinMotorSpeed, OUTPUT); // Pin kecepatan juga OUTPUT
+
+  // Atur pin tombol
+  pinMode(pinTombolOnOff, INPUT_PULLUP);
+  pinMode(pinTombolArah, INPUT_PULLUP);
+
+  // Pastikan motor mati di awal
+  matikanMotor();
+}
+
+void loop() {
+  // Cek Tombol ON/OFF
+  if (digitalRead(pinTombolOnOff) == LOW) {
+    motorNyala = !motorNyala;
+    if (motorNyala) {
+      hidupkanMotor();
+    } else {
+      matikanMotor();
+    }
+    delay(400);
+  }
+
+  // Cek Tombol Arah
+  if (digitalRead(pinTombolArah) == LOW) {
+    arahMaju = !arahMaju;
+    if (motorNyala) {
+      matikanMotor();
+      delay(50);
+      hidupkanMotor();
+    }
+    delay(400);
+  }
+}
+
+// --- Fungsi Kontrol Motor ---
+
+void hidupkanMotor() {
+  // Atur kecepatan motor menggunakan PWM
+  analogWrite(pinMotorSpeed, kecepatanMotor);
+
+  // Atur arah putaran
+  if (arahMaju) {
+    digitalWrite(pinMotorIN1, HIGH);
+    digitalWrite(pinMotorIN2, LOW);
+  } else {
+    digitalWrite(pinMotorIN1, LOW);
+    digitalWrite(pinMotorIN2, HIGH);
+  }
+}
+
+void matikanMotor() {
+  // Cara terbaik untuk berhenti adalah dengan menurunkan kecepatan ke 0
+  analogWrite(pinMotorSpeed, 0);
+
+  // Dan mengatur pin arah ke LOW
+  digitalWrite(pinMotorIN1, LOW);
+  digitalWrite(pinMotorIN2, LOW);
+}
