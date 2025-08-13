@@ -1,0 +1,174 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+// ===== PENGATURAN PENGGUNA =====
+const char* ssid = "Kyoto6";
+const char* password = "MedanLaguboti";
+String GScript_URL = "https://script.google.com/macros/s/AKfycbzz8YUawF0QHg6mFzwly3pV6TJPc2PoWq-0A3Qi00q5LWFxdkCdvf97kNE-hyWLzuD21w/exec";
+
+// ===== PENGATURAN PIN ESP32 =====
+// Sensor Ultrasonik
+const int trigPin = 25;
+const int echoPin = 26;
+// Tombol
+const int buttonPin = 27;
+// 7-Segment Display (a, b, c, d, e, f, g)
+const int segmentPins[] = {19, 18, 5, 17, 16, 4, 2};
+
+// ===== PENGATURAN LOGIKA =====
+const int AMBANG_BATAS_CM = 17;
+const long longPressDuration = 1500;
+
+// ===== VARIABEL GLOBAL =====
+int counter = 0;
+bool barangTerdeteksi = false;
+bool isSensorActive = true;
+int lastButtonState = HIGH;
+unsigned long buttonPressTime = 0;
+
+// ===== POLA 7-SEGMENT DISPLAY =====
+// **PILIH SALAH SATU!** Beri komentar (//) pada blok yang tidak digunakan.
+
+// Pola untuk COMMON CATHODE (pin COM ke GND)
+byte segmentData[10] = {
+  B11111100, // 0
+  B01100000, // 1
+  B11011010, // 2
+  B11110010, // 3
+  B01100110, // 4
+  B10110110, // 5
+  B10111110, // 6
+  B11100000, // 7
+  B11111110, // 8
+  B11110110  // 9
+};
+
+void setup() {
+  Serial.begin(115200);
+  delay(100);
+
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(buttonPin, INPUT_PULLUP);
+
+  // Inisialisasi semua pin segmen sebagai OUTPUT
+  for (int i = 0; i < 7; i++) {
+    pinMode(segmentPins[i], OUTPUT);
+  }
+
+  setupWifi();
+}
+
+void loop() {
+  handleButton();
+  
+  if (isSensorActive) {
+    runCounter();
+    tampilkanAngka(counter); // Tampilkan angka jika sensor aktif
+  } else {
+    tampilkanSimbolMati(); // Tampilkan simbol '-' jika sensor mati
+  }
+  
+  delay(50);
+}
+
+// Fungsi untuk menampilkan angka ke 7-segment display
+void tampilkanAngka(int angka) {
+  if (angka < 0 || angka > 9) return;
+  byte pola = segmentData[angka];
+  for (int i = 0; i < 7; i++) {
+    // Membaca bit dari kanan ke kiri
+    digitalWrite(segmentPins[i], bitRead(pola, 7 - i));
+  }
+}
+
+// Fungsi untuk menampilkan simbol '-' saat sensor mati
+void tampilkanSimbolMati() {
+  // Pola untuk simbol '-' (hanya segmen 'g' yang menyala)
+  byte polaMati = B00000010;
+  for (int i = 0; i < 7; i++) {
+    digitalWrite(segmentPins[i], bitRead(polaMati, 7 - i));
+  }
+}
+
+// --- Fungsi-fungsi lainnya (tidak ada perubahan) ---
+
+void setupWifi() {
+  Serial.print("Menghubungkan ke Wi-Fi: ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWi-Fi terhubung!");
+  Serial.print("Alamat IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+void handleButton() {
+  int buttonReading = digitalRead(buttonPin);
+  if (buttonReading == LOW && lastButtonState == HIGH) {
+    buttonPressTime = millis();
+  }
+  if (buttonReading == HIGH && lastButtonState == LOW) {
+    unsigned long pressDuration = millis() - buttonPressTime;
+    if (pressDuration >= longPressDuration) {
+      counter = 0;
+      Serial.println("TEKANAN LAMA: Counter direset ke 0!");
+    } else {
+      isSensorActive = !isSensorActive;
+      if (isSensorActive) {
+        Serial.println("TEKANAN SINGKAT: Sensor DIAKTIFKAN");
+      } else {
+        Serial.println("TEKANAN SINGKAT: Sensor DINONAKTIFKAN. Mengirim data...");
+        sendDataToSheet(counter);
+      }
+    }
+  }
+  lastButtonState = buttonReading;
+}
+
+void runCounter() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  unsigned long durasi = pulseIn(echoPin, HIGH);
+  int jarak = durasi * 0.017;
+  if (jarak < AMBANG_BATAS_CM && jarak > 0) {
+    if (!barangTerdeteksi) {
+      counter++;
+      if (counter > 9) { // Reset ke 0 jika lebih dari 9
+          counter = 0;
+      }
+      barangTerdeteksi = true;
+      Serial.print("Barang terhitung! Jumlah saat ini: ");
+      Serial.println(counter);
+    }
+  } else {
+    barangTerdeteksi = false;
+  }
+}
+
+void sendDataToSheet(int countValue) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String fullUrl = GScript_URL + "?count=" + String(countValue);
+    Serial.print("Mengirim data ke URL: ");
+    Serial.println(fullUrl);
+    http.begin(fullUrl);
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+      String payload = http.getString();
+      Serial.println("Kode respons: " + String(httpCode));
+      Serial.println("Isi respons: " + payload);
+    } else {
+      Serial.println("Gagal mengirim data, error: " + http.errorToString(httpCode));
+    }
+    http.end();
+  } else {
+    Serial.println("Wi-Fi tidak terhubung. Data tidak dapat dikirim.");
+  }
+}
